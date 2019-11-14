@@ -84,10 +84,28 @@ leader：“确实会有，但这样可以减小gc压力，因为传值会在栈
 
 这是golang基础教程中经常举的，用于区别c/c++例子：
 
-    func test() *User{
-        a := User{}
-        return &a
+    type User struct {
+    	Name string
+    	Age  *int
     }
+    
+    func NewUser() *User {
+        return &User{}
+    }
+        
+    func TestNewUser(t *testing.T) {
+    	_ = NewUser()
+    	_ = new(User)
+    	_ = &User{}
+    }
+    
+结果：
+
+    ➜  go-learning git:(master) ✗ go test -gcflags "-m -l"  github.com/RealBar/go-learning/basic
+    basic/escape_analysis.go:68:9: &User literal escapes to heap
+    ...
+    basic/escape_analysis_test.go:9:9: TestNewUser new(User) does not escape
+    basic/escape_analysis_test.go:10:6: TestNewUser &User literal does not escape
 这种情况较为基础，这里不再赘述。
 
 ###情况2
@@ -96,84 +114,73 @@ leader：“确实会有，但这样可以减小gc压力，因为传值会在栈
 ####example1
 
     type User struct {
-        Username string
-        Password string
-        Age      int
-    }
-    
-    func main() {
-        a := "aaa"
-        u := &User{a, "123", 12}
-        Call1(u)
+    	Name string
+    	Age  *int
     }
     
     func Call1(u *User) {
-        fmt.Printf("%v",u)
+    	fmt.Printf("%v", u)
+    }
+    
+    func TestCall1(t *testing.T) {
+    	u := &User{}
+    	Call1(u)
     }
 看一下逃逸情况：
 
-    ➜  testProj go run -gcflags "-m -l" main.go
-    # command-line-arguments
-    ./main.go:18:12: leaking param: u
-    ./main.go:19:12: Call1 ... argument does not escape
-    ./main.go:19:13: u escapes to heap
-    ./main.go:14:23: &User literal escapes to heap
+    ➜  go-learning git:(master) ✗ go test -gcflags "-m -l"  github.com/RealBar/go-learning/basic
+    ...
+    basic/escape_analysis.go:20:12: Call1 ... argument does not escape
+    basic/escape_analysis.go:20:13: u escapes to heap
+    ...
+    basic/escape_analysis_test.go:15:16: TestCall1 t does not escape
+    basic/escape_analysis_test.go:16:7: &User literal escapes to heap
 果然发生了逃逸，这里将指针传给一个函数Call1并打印，如果不打印，只对u进行读写呢？修改一下Call1
 
 ####example2
-
-    type User struct {
-        Username *string
-        Password string
-        Age      int
+    
+    func TestCall2(t *testing.T) {
+    	u := &User{}
+    	Call2(u)
     }
     
-    func main() {
-        a := "aaa"
-        u := &User{&a, "123", 12}
-        Call1(u)
-    }
-    
-    func Call1(u *User) int{
-        u.Username="bbb"
-        return u.Age * 20
+    func Call2(u *User) int {
+    	return *u.Age * 2
     }
 结果：
 
-    ➜  testProj go run -gcflags "-m -l" main.go
-    # command-line-arguments
-    ./main.go:15:12: Call1 u does not escape
-    ./main.go:11:23: main &User literal does not escape
+    ➜  go-learning git:(master) ✗ go test -gcflags "-m -l"  github.com/RealBar/go-learning/basic
+    ...
+    basic/escape_analysis.go:24:12: Call2 u does not escape
+    ...
+    basic/escape_analysis_test.go:22:7: TestCall2 &User literal does not escape
 居然没有逃逸！为什么example1发生了逃逸呢？也许你会说，example1里Call1把u传给了fmt.Printf了啊，那我们再做个实验，Call1多传几次，但还是只对u进行读写：
 
 ####example3
 
-    func main() {
-        a := "aaa"
-        u := &User{a, "123", 12}
-        Call1(u)
-    }
-    
-    func Call1(u *User) int {
-        return Call2(u)
-    }
-    
-    func Call2(u *User) int {
-        return Call3(u)
+    func TestCall3(t *testing.T) {
+    	u := &User{}
+    	Call3(u)
     }
     
     func Call3(u *User) int {
-        u.Username = "bbb"
-        return u.Age * 20
+    	return Call4(u)
+    }
+    
+    func Call4(u *User) int {
+    	return Call5(u)
+    }
+    
+    func Call5(u *User) int {
+    	return *u.Age * 2
     }
 结果：
 
-    ➜  testProj go run -gcflags "-m -l" main.go
-    # command-line-arguments
-    ./main.go:23:12: Call3 u does not escape
-    ./main.go:19:12: Call2 u does not escape
-    ./main.go:15:12: Call1 u does not escape
-    ./main.go:11:23: main &User literal does not escape
+    ➜  go-learning git:(master) ✗ go test -gcflags "-m -l"  github.com/RealBar/go-learning/basic
+    ...
+    basic/escape_analysis.go:37:12: Call5 u does not escape
+    ...
+    basic/escape_analysis_test.go:28:7: TestCall3 &User literal does not escape
 可以看到，依然没有发生逃逸。
 
 那究竟为什么example1会逃逸呢？
@@ -197,48 +204,115 @@ leader：“确实会有，但这样可以减小gc压力，因为传值会在栈
         p.value = reflect.Value{}
     ...
     }
-而这个pp类型的指针p是由构造函数newPrinter返回的，根据我们情况1，p一定发生逃逸，而p引用了传入指针，由此我们可以总结：
+而这个pp类型的指针p是由构造函数newPrinter返回的，根据我们情况1，p一定发生逃逸，而p引用了传入指针，由此我们可以有两条猜想：
 
-> **被已经逃逸的变量引用的指针，一定发生逃逸。**
- 
-###情况3
-我们再看上面备注中的代码例子：
+> 1. 被某个结构体指针的成员变量引用的指针一定逃逸
+> 2. 被已逃逸的结构体指针/值引用的指针一定逃逸
 
-func main() {
-	a := make([]*int,1)
-	b := 12
-	a[0] = &b
-}
+为了验证我们的猜想，我们再做两个实验。准备：
+
+    type System struct {
+        U *User
+    }
+    type FullSystem struct {
+    	S *System
+    }
+    func NewSystem() *System {
+    	return &System{}
+    }
+首先验证猜想1：
+#### example4
+    func Call6(u *User) {
+    	s := System{}
+    	s.U = u
+    }
+    
+    func Call7(u *User) {
+    	s := &System{}
+    	s.U = u
+    }
+    
+    func TestCall6(t *testing.T) {
+    	u := &User{}
+    	Call6(u)
+    }
+    
+    func TestCall7(t *testing.T) {
+    	u := &User{}
+    	Call7(u)
+    }
+
 结果：
 
-    ➜  testProj go run -gcflags "-m -l" main.go
-    # command-line-arguments
-    ./main.go:7:2: moved to heap: b
-    ./main.go:6:11: main make([]*int, 1) does not escape
-sliace a并没有发生逃逸，但是被a引用的b依然逃逸了。类似的情况同样发生在map和chan中：
+    ➜  go-learning git:(master) ✗ go test -gcflags "-m -l"  github.com/RealBar/go-learning/basic
+    ...
+    basic/escape_analysis_test.go:33:16: TestCall6 t does not escape
+    basic/escape_analysis_test.go:34:7: TestCall6 &User literal does not escape
+    basic/escape_analysis_test.go:38:16: TestCall7 t does not escape
+    basic/escape_analysis_test.go:39:7: &User literal escapes to heap
+可以看到，两个调用几乎一模一样，只是test6将使用结构体值进行赋值，而test7使用结构体指针进行赋值，结果test6不逃逸，test7逃逸，并且注意到，
+System指针本身并没有逃逸。因此证明了我们的结论：
+> **被某个结构体指针引用的指针一定逃逸**
 
-    func main() {
-        a := make([]*int,1)
-        b := 12
-        a[0] = &b
+注意到，这个命题的逆命题是否成立？即被结构体值引用的指针是否一定不逃逸呢？看下边的例子
+#### example5
+    func Call8(u *User) {
+        s := System{}
+        // make &s to escape
+        f := &FullSystem{}
+        f.S = &s
+        s.U = u
+    }
     
-        c := make(map[string]*int)
-        d := 14
-        c["aaa"]=&d
-    
-        e := make(chan *int,1)
-        f := 15
-        e <- &f
+    func TestCall8(t *testing.T) {
+        u := &User{}
+        Call8(u)
     }
 结果：
 
-    ➜  testProj go run -gcflags "-m -l" main.go
-    # command-line-arguments
-    ./main.go:7:2: moved to heap: b
-    ./main.go:11:2: moved to heap: d
-    ./main.go:15:2: moved to heap: f
-    ./main.go:6:11: main make([]*int, 1) does not escape
-    ./main.go:10:11: main make(map[string]*int) does not escape
+    ➜  go-learning git:(master) ✗ go test -gcflags "-m -l"  github.com/RealBar/go-learning/basic
+    ...
+    basic/escape_analysis.go:60:2: moved to heap: s
+    basic/escape_analysis.go:62:7: Call8 &FullSystem literal does not escape
+    ...
+    basic/escape_analysis_test.go:44:16: TestCall8 t does not escape
+    basic/escape_analysis_test.go:45:7: &User literal escapes to heap
+注意这里在Call8我们让首先让结构体指针&s发生逃逸，然后再使用结构体值s进行赋值，发生逃逸。因此我们得到另一个结论：
+> **被已经逃逸的结构体引用的指针一定逃逸**
+
+###情况3
+我们再看上面备注中的代码例子，稍微改造一下：
+#### example6
+    func TestCall9(t *testing.T) {
+        u1 := &User{}
+        u2 := &User{}
+        u3 := &User{}
+        Call9(u1, u2, u3)
+    }
+    func Call9(u1 *User,u2 *User,u3 *User) {
+    	s := make([]*User, 1)
+    	m := make(map[string]*User)
+    	c := make(chan *User, 1)
+    	s[0] = u1
+    	m["aa"] = u2
+    	c <- u3
+    }
+结果：
+
+    ➜  go-learning git:(master) ✗ go test -gcflags "-m -l"  github.com/RealBar/go-learning/basic
+    ...
+    basic/escape_analysis.go:71:12: leaking param: u1
+    basic/escape_analysis.go:71:21: leaking param: u2
+    basic/escape_analysis.go:71:30: leaking param: u3
+    basic/escape_analysis.go:72:11: Call9 make([]*User, 1) does not escape
+    basic/escape_analysis.go:73:11: Call9 make(map[string]*User) does not escape
+    ...
+    basic/escape_analysis_test.go:50:16: TestCall9 t does not escape
+    basic/escape_analysis_test.go:51:8: &User literal escapes to heap
+    basic/escape_analysis_test.go:52:8: &User literal escapes to heap
+    basic/escape_analysis_test.go:53:8: &User literal escapes to heap
+slice,map,chan并没有发生逃逸，但是被它们引用的User指针都逃逸了。
+
 由此我们可以得出结论：
 
 > **被指针类型的slice、map和chan引用的指针一定发生逃逸**
@@ -249,12 +323,11 @@ sliace a并没有发生逃逸，但是被a引用的b依然逃逸了。类似的�
 我们得出了指针必然发生逃逸的三种情况（go version go1.13.4 darwin/amd64)：
 
 + 在某个函数中new或字面量创建出的变量，将其指针作为函数返回值，则该变量一定发生逃逸（构造函数返回的指针变量一定逃逸）；
-+ 被已经逃逸的变量引用的指针，一定发生逃逸；
++ 被某个结构体指针引用的指针一定逃逸；
++ 被已经逃逸的结构体引用的指针一定逃逸；
 + 被指针类型的slice、map和chan引用的指针，一定发生逃逸；
+
 同时我们也得出一些必然不会逃逸的情况：
 
-+ 指针被未发生逃逸的变量引用；
++ 指针被未发生逃逸的结构体值引用；
 + 仅仅在函数内对变量做取址操作，而未将指针传出；
-有一些情况可能发生逃逸，也可能不会发生逃逸：
-
-+ 将指针作为入参传给别的函数；这里还是要看指针在被传入的函数中的处理过程，如果发生了上边的三种情况，则会逃逸；否则不会逃逸；
