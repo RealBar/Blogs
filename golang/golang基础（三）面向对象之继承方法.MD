@@ -49,3 +49,24 @@
 总结起来就是：*当某个类型实现某个接口的方法的receiver是指针时，必须使用这个类型的指针才能赋值到该接口类型的变量上。*
 
 [stack overflow上的相关回答](https://stackoverflow.com/questions/40823315/x-does-not-implement-y-method-has-a-pointer-receiver)
+
+###什么？struct可以嵌入interface？
+    type interceptingWriter struct {
+    	http.ResponseWriter
+    	code    int
+    	written int64
+    }
+    
+    func (w *interceptingWriter) WriteHeader(code int) {
+    	w.code = code
+    	w.ResponseWriter.WriteHeader(code)
+    }
+    
+    func (w *interceptingWriter) Write(p []byte) (int, error) {
+    	n, err := w.ResponseWriter.Write(p)
+    	w.written += int64(n)
+    	return n, err
+    }
+对你没看错，这段代码出自 github.com/go-kit/kit@v0.9.0/transport/http/server.go
+
+众所周知http.ResponseWriter是一个interface，struct嵌入一个interface究竟意欲何为？
