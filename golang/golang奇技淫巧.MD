@@ -147,3 +147,10 @@
     type DialOption interface {
     	apply(*dialOptions)
     }
+    
+### 不能Seek的Reader如何找回已经read的数据？
+也许有这种情况：当一个函数中你从reader中读取了一些数据后，在另一个处理过程中你需要哪些已经被读取的数据和剩下的数据一起完成业务处理。
+如果reader实现了Seeker，那相当简单：
+
+    // reader implements Seeker
+    read.Seek(Seek)

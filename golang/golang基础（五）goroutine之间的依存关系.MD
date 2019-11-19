@@ -1,10 +1,11 @@
-#golang基础（五）彻底搞懂通道channel的用法
-###基础用法
+#golang基础（五）goroutine
+###协程？不，它更像线程
+很多人把goroutine称为协程，其实是不准确的。
 
-###进阶用法
-####用select选取多个chan中就绪的执行
+协程(coroutine)的定义，引自wiki：
+> Coroutines are computer program components that generalize subroutines for non-preemptive multitasking, 
+>by allowing execution to be suspended and resumed. 
 
-####函数返回值中的chan
 
-###高级用法
-####用range遍历chan所有值
+###main函数退出，则进程退出
+
