@@ -1,4 +1,4 @@
-#golang基础（五）goroutine
+#golang基础（五）goroutine全解析
 ###协程？不，它更像线程
 很多人把goroutine称为协程，其实是不准确的。
 

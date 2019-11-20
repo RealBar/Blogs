@@ -153,4 +153,19 @@
 如果reader实现了Seeker，那相当简单：
 
     // reader implements Seeker
-    read.Seek(Seek)
+    reader.read(buf)
+    reader.Seek(0,SeekStart)
+但是如果reader没有实现Seeker接口怎么办？有一个妙招：
+
+    tmpBuf := new(bytes.Buffer)
+    newReader := io.TeeReader(reader,tmpBuf)
+    newReader.read(buf)
+    fullReader := io.MultiReader(tmpBuf,reader)
+利用TeeReader将读取的数据存一份，然后用MultiReader将存的数据和剩下的数据拼接起来，就构成了完整的数据。
+这个方法的实际应用场景就是图片的验证和解析。验证调用image.DecodeConfig需要读取图片头部信息，之后解析调用image.Decode需要读取全部的图片信息，
+所以如果数据来源reader不是Seeker，那必定需要此种方法将读取的图片头存起来，然后拼接起来交给Decode：
+
+    var header bytes.Buffer
+    conf, err := png.DecodeConfig(io.TeeReader(streamReader, &header))
+    if err != nil || !confValid(conf) { ... }
+    im, err := png.Decode(io.MultiReader(&header, streamReader)
