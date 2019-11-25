@@ -1,4 +1,4 @@
-#golang基础（五）彻底搞懂通道channel的用法
+#golang基础（八）彻底搞懂通道channel的用法
 ###基础用法
 
 ###进阶用法
