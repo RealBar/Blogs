@@ -113,7 +113,7 @@ func main() {
 ```
 func Setup2() <-chan bool {
 	time.Sleep(time.Second * 3)
-	c := make(chan bool)
+	c := make(chan bool,1)
 	c <- true
 	return c
 }

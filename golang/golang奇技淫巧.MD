@@ -1,6 +1,6 @@
-#golang奇技淫巧
+#go奇技淫巧
 
-平时写代码总是能碰到一些具有一定参考价值的技巧，这些技巧可能并不是那么的高端大气上档次，但往往如此十分有价值且实用。
+平时写代码总是能碰到一些具有一定参考价值的技巧，这些技巧可能并不是那么的高大上，但往往如此十分有价值且实用。
 故而这里做一个记录。
 
 ###Must函数
@@ -179,3 +179,11 @@ func Validate(req *http.Reuest)error{
     conf, err := png.DecodeConfig(io.TeeReader(streamReader, &header))
     if err != nil || !confValid(conf) { ... }
     im, err := png.Decode(io.MultiReader(&header, streamReader)
+
+### 如何优雅地设置超时？
+有编程经验的人都知道在耗时调用前一定要加超时，如http.Client、redis客户端、数据库客户端等都直接或间接提供了超时配置。那么如果要你亲手实现一个
+超时机制，你会怎么做呢？
+做法1
+```go
+
+```
