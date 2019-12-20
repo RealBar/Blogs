@@ -182,46 +182,19 @@ func Validate(req *http.Reuest)error{
 
 ### 如何优雅地设置超时？
 有编程经验的人都知道在耗时调用前一定要加超时，如http.Client、redis客户端、数据库客户端等都直接或间接提供了超时配置。那么如果要你亲手实现一个
-超时机制，你会怎么做呢？
+超时机制，你会怎么做呢？或者更具体一点，给你一个长阻塞的调用
 做法1
 ```go
-
-```
-### struct的这个秘密你知道吗
-在浏览go源码时，有这样一段注释吸引了我的注意
-
-go version:1.13.4
-
-sync/once.go
-```go
-type Once struct {
-	// done indicates whether the action has been performed.
-	// It is first in the struct because it is used in the hot path.
-	// The hot path is inlined at every call site.
-	// Placing done first allows more compact instructions on some architectures (amd64/x86),
-	// and fewer instructions (to calculate offset) on other architectures.
-	done uint32
-	m    Mutex
+// 可能永久阻塞
+fun LongCall() string {
+    ...
 }
 ```
-根据注释的意思，因为`done`被hot path使用，因此它被放在struct的首位，而放在首位的好处就是能在某些架构的cpu(amd/x86)上被编译成更精短的指令，
-因为防伪struct的首位元素不需要传递offset。
-
-我在stackoverflow上就这段注释也提了问[我的提问](https://stackoverflow.com/questions/59174176/what-does-hot-path-mean-in-the-context-of-sync-once)
-
-有人回答如下
->A hot path is a sequence of instructions executed very frequently.
->
->When accessing the first field of a structure, we can directly dereference the pointer to the structure to access the first field. To access other fields, we need to provide an offset from the first value in addition to the struct pointer.
->
->In machine code, this offset is an additional value to pass with the instruction which makes it longer. The performance impact is that the CPU must perform an addition of the offset to the struct pointer to get the address of the value to access.
->
->Thus machine code to access the first field of a struct is more compact and faster.
->
->Note that this assumes that the layout of the field values in memory is the same as in the struct definition.
-
-这其实启发我们，在编程时可以将可能频繁访问的字段放在结构体的第一位，这样能一定程度地提高性能。
-
-实际能提升多少性能呢？经测试，微乎其微。
-
-所以这里暂时作为一个冷知识吧。
+要你根据它实现一个超时接口，提供超时功能:
+```go
+type TimeoutCall interface{
+    // 从调用时刻开始，超过timeout时间则返回
+    Call(timeout time.Duration) string
+} 
+```
+想想该怎么做？
